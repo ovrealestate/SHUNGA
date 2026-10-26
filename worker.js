@@ -22,10 +22,31 @@ async function sheetCall(env,action,payload={}){
 export default {async fetch(req,env){let response;try{response=await route(req,env);}catch(e){response=json({error:e.message||'No se pudo completar la operación.'},502);}const h=new Headers(response.headers);h.set('X-Content-Type-Options','nosniff');h.set('Referrer-Policy','no-referrer');h.set('X-Frame-Options','DENY');h.set('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return new Response(response.body,{status:response.status,headers:h});}};
 export async function route(req,env){const u=new URL(req.url);
 if(!await authenticated(req,env))return new Response('Acceso privado · Beach & Love',{status:401,headers:{'WWW-Authenticate':'Basic realm="Beach & Love SHUNGA", charset="UTF-8"','Cache-Control':'no-store'}});
+if(u.pathname.startsWith('/photos/')&&req.method==='GET'){
+ const model=u.pathname.slice('/photos/'.length);
+ if(!/^SH[0-9]+$/.test(model)||!env.CATALOG)return json({error:'Fotografía no encontrada.'},404);
+ const asset=await env.CATALOG.prepare('SELECT image_base64,mime FROM catalog_assets WHERE model=?').bind(model).first();
+ if(!asset?.image_base64)return json({error:'Fotografía no disponible.'},404);
+ return new Response(Uint8Array.from(atob(asset.image_base64),c=>c.charCodeAt(0)),{headers:{'Content-Type':asset.mime,'Cache-Control':'private, max-age=86400'}});
+}
+if(u.pathname==='/api/reset'&&req.method==='POST'){
+ if(req.headers.get('Origin')!==u.origin||req.headers.get('Content-Type')!=='application/json')return json({error:'Origen inválido.'},403);
+ if(!env.SHEETS_ENDPOINT)return json({error:'Google Sheets no está disponible.'},503);
+ if(Number(req.headers.get('Content-Length'))>8192)return json({error:'Solicitud demasiado grande.'},413);
+ const raw=await req.text();if(raw.length>8192)return json({error:'Solicitud demasiado grande.'},413);
+ let body;try{body=JSON.parse(raw);}catch{return json({error:'Solicitud inválida.'},400);}
+ if(body.confirmed!==true||!Array.isArray(body.expected)||!body.expected.length||body.expected.length>100)return json({error:'Debes confirmar que todo el inventario se pondrá en 0.'},400);
+ if(body.expected.some(p=>typeof p.id!=='string'||!(p.previous===null||(Number.isInteger(p.previous)&&p.previous>=0&&p.previous<=20))||!Number.isInteger(p.revision)||p.revision<0))return json({error:'El inventario cambió. Actualiza antes de reiniciar.'},400);
+ const result=await sheetCall(env,'reset',{confirmed:true,expected:body.expected.map(p=>({id:p.id,previous:p.previous,revision:p.revision}))});
+ return json(result,result.ok?200:result.conflict?409:502);
+}
 if(u.pathname==='/api/inventory'&&req.method==='GET'){
  if(!env.SHEETS_ENDPOINT)return json({error:'La conexión con Google Sheets no está disponible.'},503);
  const result=await sheetCall(env,'read');if(!result.ok)throw Error(result.error);
- return json({products:result.products,live:true,storage:'google-sheets',categories:CATEGORIES});
+ let catalog=new Map();
+ if(env.CATALOG){const data=await env.CATALOG.prepare("SELECT model,info_json,(image_base64 IS NOT NULL AND image_base64!='') AS has_photo FROM catalog_assets").all();catalog=new Map(data.results.map(r=>[r.model,{...JSON.parse(r.info_json),hasPhoto:!!r.has_photo}]));}
+ const products=result.products.map(p=>{const c=catalog.get(p.model);return c?{...p,photo:c.hasPhoto?'/photos/'+p.model:p.photo,catalogNote:c.note,catalogPage:c.page}:p;});
+ return json({products,live:true,storage:'google-sheets',categories:CATEGORIES});
 }
 if(u.pathname==='/api/inventory'&&req.method==='POST'){
  if(req.headers.get('Origin')!==u.origin||req.headers.get('Content-Type')!=='application/json')return json({error:'Origen inválido.'},403);
@@ -40,8 +61,8 @@ if(u.pathname==='/')return new Response(HTML,{headers:{'Content-Type':'text/html
 return json({error:'Página no encontrada.'},404);
 }
 const HTML=`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUNGA · Beach & Love</title><style>
-:root{color-scheme:light;--ink:#222d2a;--green:#284b40;--cream:#f5f3ed;--line:#dedfd5}*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font:15px system-ui,sans-serif}header,main,footer{max-width:1240px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.brand{letter-spacing:.22em;font-size:13px}.tiny{font-size:12px;color:#61706a}.hero{display:flex;align-items:end;justify-content:space-between;gap:20px;margin:18px 0 28px}h1{font:clamp(36px,6vw,64px) Georgia,serif;margin:8px 0}h2{font:30px Georgia,serif;margin:32px 0 16px}p{line-height:1.6}.stats{display:flex;gap:30px}.stats strong{display:block;font:30px Georgia,serif}.notice{padding:16px 20px;background:#e8ecdf;border:1px solid #d3dbc8;border-radius:8px;font-size:13px;line-height:1.6;margin-bottom:24px}button,.button{display:inline-block;border:1px solid var(--green);border-radius:6px;background:var(--green);color:white;padding:11px 16px;font:inherit;text-decoration:none;cursor:pointer}button.secondary,.button.secondary{background:transparent;color:var(--green)}button:disabled{opacity:.5;cursor:default}.tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center}input{background:white;border:1px solid var(--line);border-radius:6px;padding:13px;font:inherit;flex:1;min-width:220px}nav{display:flex;overflow:auto;gap:8px;margin:18px 0 24px;padding-bottom:8px}nav button{white-space:nowrap;background:transparent;color:var(--green);border-color:var(--line)}nav button[aria-pressed=true]{background:var(--green);color:white}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;break-inside:avoid}.photo{height:185px;background:#fff;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #eee;position:relative}.photo img{width:100%;height:100%;object-fit:contain;padding:14px}.placeholder{color:#78817c;text-align:center;font-size:12px}.placeholder strong{display:block;font:30px Georgia,serif;color:#a2ada5}.content{padding:20px}.model{font-size:11px;letter-spacing:.14em;color:#6b7c72}.name{font-size:15px;line-height:1.4;min-height:40px;margin:7px 0 16px}.variant{border-top:1px solid #e9eae3;padding-top:12px;margin-top:12px}.variant-top{display:flex;justify-content:space-between;gap:8px}.variant small{color:#66736b}.count{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}select{padding:9px;border:1px solid #b4c1b6;border-radius:5px;font:inherit;background:white;min-width:90px}.difference{font-size:12px;color:#7b4f2a;min-height:18px;margin-top:6px}.note{font-size:11px;color:#68736e;margin-top:9px}.save-card{width:100%;margin-top:18px}.save-status{font-size:12px;min-height:18px;margin-top:6px}.empty{padding:25px;border:1px dashed #b5c0b6}.print-only{display:none}footer{font-size:12px;border-top:1px solid var(--line);color:#63736a}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:start;flex-direction:column}.stats{gap:28px}}@media(max-width:560px){header,main,footer{padding:20px}.grid{grid-template-columns:1fr}.photo{height:180px}.brand{font-size:10px}header .button{font-size:12px}.tools button{width:100%}}@media print{body{background:white;font-size:10px}header,main,footer{padding:8px;max-width:none}nav,.tools,.notice,#login,.save-card{width:100%;margin-top:18px}.save-status{display:none!important}.hero{margin:8px 0}h1{font-size:30px}h2{font-size:22px;break-after:avoid}.stats strong{font-size:20px}.grid{display:block;columns:2;column-gap:15px}.card{display:inline-block;width:100%;margin-bottom:12px;border-radius:0}.photo{height:95px}.content{padding:10px}.name{min-height:0;font-size:12px;margin:5px 0}.variant{padding-top:6px;margin-top:6px}.count{margin-top:5px}select{appearance:none;border:0;padding:0;font-size:11px}.note{font-size:9px}.print-only{display:block}footer{margin-top:12px}@page{size:A4;margin:12mm}}
-</style><header><div><div class="brand">BEACH & LOVE</div><div class="tiny">Colección SHUNGA</div></div><span class="tiny">Acceso privado · morelos</span></header><main><div class="hero"><div><div class="tiny">CONTROL DE INVENTARIO</div><h1>Cada detalle cuenta.</h1><p>Tu colección, ordenada como la tienes en tienda.</p></div><div class="stats"><div><strong id="models">—</strong><span>modelos</span></div><div><strong id="variants">—</strong><span>variantes</span></div><div><strong id="counted">—</strong><span>contadas</span></div></div></div><div id="notice" class="notice" role="status">Cargando inventario…</div><div class="tools"><label class="sr" for="search">Buscar producto, modelo o código</label><input id="search" type="search" placeholder="Buscar producto, modelo o código…"><button id="refresh" class="secondary">Actualizar</button></div><nav id="categories" aria-label="Categorías"></nav><div id="inventory"></div></main><footer>Beach & Love · SHUNGA · Las existencias vacías significan pendiente de conteo. Cero significa sin unidades.<br>Fotografías pendientes de recuperar del catálogo original.</footer><script type="module" src="/app.js"></script></html>`;
+:root{color-scheme:light;--ink:#222d2a;--green:#284b40;--cream:#f5f3ed;--line:#dedfd5}*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font:15px system-ui,sans-serif}header,main,footer{max-width:1240px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.brand{letter-spacing:.22em;font-size:13px}.tiny{font-size:12px;color:#61706a}.hero{display:flex;align-items:end;justify-content:space-between;gap:20px;margin:18px 0 28px}h1{font:clamp(36px,6vw,64px) Georgia,serif;margin:8px 0}h2{font:30px Georgia,serif;margin:32px 0 16px}p{line-height:1.6}.stats{display:flex;gap:30px}.stats strong{display:block;font:30px Georgia,serif}.danger{background:#8d352f;border-color:#8d352f}dialog{max-width:540px;border:1px solid var(--line);border-radius:12px;padding:25px;color:var(--ink)}dialog::backdrop{background:#142c2399}dialog h2{margin-top:0}.dialog-actions{display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap}.catalog-note{font-size:12px;color:#596b60;line-height:1.5;margin:8px 0 14px}.notice{padding:16px 20px;background:#e8ecdf;border:1px solid #d3dbc8;border-radius:8px;font-size:13px;line-height:1.6;margin-bottom:24px}button,.button{display:inline-block;border:1px solid var(--green);border-radius:6px;background:var(--green);color:white;padding:11px 16px;font:inherit;text-decoration:none;cursor:pointer}button.secondary,.button.secondary{background:transparent;color:var(--green)}button:disabled{opacity:.5;cursor:default}.tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center}input{background:white;border:1px solid var(--line);border-radius:6px;padding:13px;font:inherit;flex:1;min-width:220px}nav{display:flex;overflow:auto;gap:8px;margin:18px 0 24px;padding-bottom:8px}nav button{white-space:nowrap;background:transparent;color:var(--green);border-color:var(--line)}nav button[aria-pressed=true]{background:var(--green);color:white}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;break-inside:avoid}.photo{height:185px;background:#fff;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #eee;position:relative}.photo img{width:100%;height:100%;object-fit:contain;padding:14px}.placeholder{color:#78817c;text-align:center;font-size:12px}.placeholder strong{display:block;font:30px Georgia,serif;color:#a2ada5}.content{padding:20px}.model{font-size:11px;letter-spacing:.14em;color:#6b7c72}.name{font-size:15px;line-height:1.4;min-height:40px;margin:7px 0 16px}.variant{border-top:1px solid #e9eae3;padding-top:12px;margin-top:12px}.variant-top{display:flex;justify-content:space-between;gap:8px}.variant small{color:#66736b}.count{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}select{padding:9px;border:1px solid #b4c1b6;border-radius:5px;font:inherit;background:white;min-width:90px}.difference{font-size:12px;color:#7b4f2a;min-height:18px;margin-top:6px}.note{font-size:11px;color:#68736e;margin-top:9px}.save-card{width:100%;margin-top:18px}.save-status{font-size:12px;min-height:18px;margin-top:6px}.empty{padding:25px;border:1px dashed #b5c0b6}.print-only{display:none}footer{font-size:12px;border-top:1px solid var(--line);color:#63736a}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:start;flex-direction:column}.stats{gap:28px}}@media(max-width:560px){header,main,footer{padding:20px}.grid{grid-template-columns:1fr}.photo{height:180px}.brand{font-size:10px}header .button{font-size:12px}.tools button{width:100%}}@media print{body{background:white;font-size:10px}header,main,footer{padding:8px;max-width:none}nav,.tools,.notice,#login,.save-card{width:100%;margin-top:18px}.save-status{display:none!important}.hero{margin:8px 0}h1{font-size:30px}h2{font-size:22px;break-after:avoid}.stats strong{font-size:20px}.grid{display:block;columns:2;column-gap:15px}.card{display:inline-block;width:100%;margin-bottom:12px;border-radius:0}.photo{height:95px}.content{padding:10px}.name{min-height:0;font-size:12px;margin:5px 0}.variant{padding-top:6px;margin-top:6px}.count{margin-top:5px}select{appearance:none;border:0;padding:0;font-size:11px}.note{font-size:9px}.print-only{display:block}footer{margin-top:12px}@page{size:A4;margin:12mm}}
+</style><header><div><div class="brand">BEACH & LOVE</div><div class="tiny">Colección SHUNGA</div></div><span class="tiny">Acceso privado · morelos</span></header><main><div class="hero"><div><div class="tiny">CONTROL DE INVENTARIO</div><h1>Cada detalle cuenta.</h1><p>Tu colección, ordenada como la tienes en tienda.</p></div><div class="stats"><div><strong id="models">—</strong><span>modelos</span></div><div><strong id="variants">—</strong><span>variantes</span></div><div><strong id="counted">—</strong><span>contadas</span></div></div></div><div id="notice" class="notice" role="status">Cargando inventario…</div><div class="tools"><label class="sr" for="search">Buscar producto, modelo o código</label><input id="search" type="search" placeholder="Buscar producto, modelo o código…"><button id="refresh" class="secondary">Actualizar</button><button id="reset" class="danger" disabled>Poner todo en 0</button></div><nav id="categories" aria-label="Categorías"></nav><div id="inventory"></div><dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">¿Poner todo el inventario en 0?</h2><p id="reset-warning"></p><p>Se sustituirán los conteos actuales en Google Sheets y se descartarán los cambios sin guardar. Las categorías y fotografías se conservarán.</p><div class="dialog-actions"><button id="cancel-reset" class="secondary" autofocus>Cancelar</button><button id="confirm-reset" class="danger">Sí, poner todo en 0</button></div></dialog></main><footer>Beach & Love · SHUNGA · Las existencias vacías significan pendiente de conteo. Cero significa sin unidades.<br>Fotografías e información del catálogo proporcionado. SH44: fotografía pendiente de confirmar.</footer><script type="module" src="/app.js"></script></html>`;
 const APP=String.raw`
 let state,category='Todas',pending=false;
 const drafts=new Map(),statuses=new Map();
@@ -58,13 +79,14 @@ async function load(){
  try{
   $('#refresh').disabled=true;
   document.querySelectorAll('select,.save-card').forEach(e=>e.disabled=true);
+  $('#reset').disabled=true;
   const r=await fetch('/api/inventory',{cache:'no-store'}),data=await r.json();
   if(!r.ok)throw Error(data.error);
   state=data;
   for(const [id,value] of drafts){const p=state.products.find(p=>p.id===id);if(!p||p.physical===value)drafts.delete(id);}
   statuses.clear();summary();render();
  }catch(e){if(state)state.live=false;message(e.message+' Actualiza para volver a conectar.');}
- finally{$('#refresh').disabled=false;}
+ finally{$('#refresh').disabled=pending;$('#reset').disabled=pending||!state?.live;}
 }
 async function saveCard(model){
  if(pending||!state.live)return;
@@ -83,6 +105,7 @@ async function saveCard(model){
  finally{pending=false;$('#refresh').disabled=false;summary();render();}
 }
 function render(){
+ $('#reset').disabled=pending||!state.live;
  const nav=$('#categories');nav.replaceChildren();
  for(const c of ['Todas',...state.categories]){
   const b=el('button',c);b.setAttribute('aria-pressed',String(c===category));b.disabled=pending;
@@ -100,6 +123,7 @@ function render(){
    const fallback=()=>{photo.replaceChildren();const p=el('div',undefined,'placeholder');p.append(el('strong',model),el('span','Fotografía pendiente'));photo.append(p);};
    if(first.photo){const img=el('img');img.src=first.photo;img.alt=first.name;img.loading='lazy';img.onerror=fallback;photo.append(img);}else fallback();
    card.append(photo);const content=el('div',undefined,'content');content.append(el('div',model,'model'),el('h3',first.name,'name'));
+   if(first.catalogNote)content.append(el('p',first.catalogNote,'catalog-note')); 
    const save=el('button','Guardar','save-card');save.type='button';save.setAttribute('aria-label','Guardar '+model);save.onclick=()=>saveCard(model);
    const status=el('div',statuses.get(model)||'','save-status');status.setAttribute('role','status');
    const updateButton=()=>{save.disabled=pending||!state.live||!state.products.some(p=>p.model===model&&drafts.has(p.id));};
@@ -124,6 +148,23 @@ function render(){
 }
 $('#search').oninput=()=>{if(state&&!pending)render();};
 $('#refresh').onclick=()=>{if(!pending)load();};
+$('#reset').onclick=()=>{
+ if(pending||!state?.live)return;
+ $('#reset-warning').textContent='Se pondrá en 0 la existencia física de las '+state.products.length+' variantes de TODAS las categorías, aunque tengas una búsqueda o filtro seleccionado.';
+ $('#reset-dialog').showModal();$('#cancel-reset').focus();
+};
+$('#cancel-reset').onclick=()=>$('#reset-dialog').close();
+$('#confirm-reset').onclick=async()=>{
+ if(pending||!state?.live)return;
+ $('#reset-dialog').close();pending=true;render();$('#refresh').disabled=true;
+ message('Poniendo todo el inventario en 0…');
+ try{
+  const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmed:true,expected:state.products.map(p=>({id:p.id,previous:p.physical,revision:p.revision}))})});
+  const result=await r.json();if(!r.ok)throw Error(result.error);
+  drafts.clear();statuses.clear();await load();message('Se guardó 0 en las '+result.count+' variantes de Google Sheets.');
+ }catch(e){message(e.message+' No se confirmó el reinicio. Actualiza para comprobar la hoja.');}
+ finally{pending=false;$('#refresh').disabled=false;render();}
+};
 window.addEventListener('beforeunload',e=>{if(pending||drafts.size){e.preventDefault();e.returnValue='';}});
 load();
 `;
