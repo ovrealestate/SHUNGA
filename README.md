@@ -6,9 +6,9 @@ URL: https://shunga.ovrealestate.workers.dev
 
 ## Operación
 
-Acceder con el usuario y la contraseña compartidos proporcionados al personal. Seleccionar una existencia de 0 a 20 guarda automáticamente. “Sin contar” elimina el conteo; cero significa sin unidades. La página confirma el guardado o muestra el error. Actualizar consulta los datos persistidos. La escritura comprueba la revisión en una sola operación para evitar sobrescribir cambios simultáneos; un disparador conserva el historial en `inventory_history`.
+Acceder con el usuario y la contraseña compartidos proporcionados al personal. Seleccionar una existencia de 0 a 20 deja un cambio pendiente. Cada cuadro de producto tiene un botón Guardar que guarda sus variantes modificadas. “Sin contar” elimina el conteo; cero significa sin unidades. La página confirma el guardado o muestra el error. Actualizar consulta los datos persistidos. La escritura comprueba la revisión en una sola operación para evitar sobrescribir cambios simultáneos; un disparador conserva el historial en `inventory_history`.
 
-Las categorías, búsqueda y formato de impresión se mantienen. Imprimir / Guardar PDF imprime la selección visible. Las fotografías originales siguen pendientes de recuperar.
+Las categorías y la búsqueda se mantienen. No hay botón de impresión. Las fotografías originales siguen pendientes de recuperar.
 
 ## Configuración
 
