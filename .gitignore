@@ -8,3 +8,7 @@ SHUNGA-vista-referencia.pdf
 deployment.json
 verify-ui.mjs
 backup-worker.js
+
+.private/
+tmp/
+verify-*.mjs
