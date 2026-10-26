@@ -5,12 +5,5 @@
   "workers_dev": true,
   "observability": {
     "enabled": true
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "shunga-inventory",
-      "database_id": "172a42c3-040d-4010-b54c-0cd6de41b56e"
-    }
-  ]
+  }
 }

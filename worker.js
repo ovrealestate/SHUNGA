@@ -8,26 +8,32 @@ export async function authenticated(req,env){
  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(value))),b=>b.toString(16).padStart(2,'0')).join('');
  let d=hash.length^env.AUTH_HASH.length;for(let i=0;i<hash.length;i++)d|=hash.charCodeAt(i)^(env.AUTH_HASH.charCodeAt(i)||0);return d===0;
 }
+async function sheetCall(env,action,payload={}){
+ const target=new URL(env.SHEETS_ENDPOINT);
+ if(target.protocol!=='https:'||target.hostname!=='script.google.com'||!target.pathname.endsWith('/exec'))throw Error('Conexión de Sheets inválida.');
+ const body=JSON.stringify({action,...payload,ts:Date.now(),nonce:crypto.randomUUID()});
+ const key=await crypto.subtle.importKey('raw',enc.encode(env.AUTH_HASH),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const sig=btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode(body)))));
+ const r=await fetch(target.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body,sig}),signal:AbortSignal.timeout(25000)});
+ if(!r.ok)throw Error('Google Sheets no confirmó la operación. Actualiza antes de reintentar.');
+ let result;try{result=await r.json();}catch{throw Error('Google Sheets necesita completar la autorización de la conexión.');}
+ return result;
+}
 export default {async fetch(req,env){let response;try{response=await route(req,env);}catch(e){response=json({error:e.message||'No se pudo completar la operación.'},502);}const h=new Headers(response.headers);h.set('X-Content-Type-Options','nosniff');h.set('Referrer-Policy','no-referrer');h.set('X-Frame-Options','DENY');h.set('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return new Response(response.body,{status:response.status,headers:h});}};
 export async function route(req,env){const u=new URL(req.url);
 if(!await authenticated(req,env))return new Response('Acceso privado · Beach & Love',{status:401,headers:{'WWW-Authenticate':'Basic realm="Beach & Love SHUNGA", charset="UTF-8"','Cache-Control':'no-store'}});
 if(u.pathname==='/api/inventory'&&req.method==='GET'){
- if(!env.DB)return json({error:'El inventario no está disponible temporalmente.'},503);
- const result=await env.DB.prepare('SELECT product_json,physical,updated,revision FROM inventory ORDER BY position').all();
- const list=result.results.map(r=>({...JSON.parse(r.product_json),physical:r.physical,updated:r.updated,revision:r.revision}));
- return json({products:list,live:true,storage:'cloudflare',categories:CATEGORIES});
+ if(!env.SHEETS_ENDPOINT)return json({error:'La conexión con Google Sheets no está disponible.'},503);
+ const result=await sheetCall(env,'read');if(!result.ok)throw Error(result.error);
+ return json({products:result.products,live:true,storage:'google-sheets',categories:CATEGORIES});
 }
 if(u.pathname==='/api/inventory'&&req.method==='POST'){
  if(req.headers.get('Origin')!==u.origin||req.headers.get('Content-Type')!=='application/json')return json({error:'Origen inválido.'},403);
- if(!env.DB)return json({error:'No se pudo conectar al inventario. No se confirmó ningún cambio.'},503);
+ if(!env.SHEETS_ENDPOINT)return json({error:'No se pudo conectar al inventario. No se confirmó ningún cambio.'},503);
  if(Number(req.headers.get('Content-Length'))>2048)return json({error:'Solicitud demasiado grande.'},413);const raw=await req.text();if(raw.length>2048)return json({error:'Solicitud demasiado grande.'},413);let body;try{body=JSON.parse(raw);}catch{return json({error:'Solicitud inválida.'},400);}
  const valid=n=>n===null||(Number.isInteger(n)&&n>=0&&n<=20);
  if(typeof body.id!=='string'||!valid(body.value)||!valid(body.previous)||!Number.isInteger(body.revision)||body.revision<0)return json({error:'Selecciona una existencia entre 0 y 20.'},400);
- const now=new Date().toISOString();
- const result=await env.DB.prepare('UPDATE inventory SET physical=?, updated=?, revision=revision+1 WHERE id=? AND physical IS ? AND revision=? RETURNING physical,updated,revision').bind(body.value,now,body.id,body.previous,body.revision).all();
- const saved=result.results[0];
- if(!saved)return json({error:'Otro conteo cambió esta variante. Actualiza antes de guardar.'},409);
- return json({ok:true,value:saved.physical,updated:saved.updated,revision:saved.revision});
+ const result=await sheetCall(env,'write',{id:body.id,value:body.value,previous:body.previous,revision:body.revision});return json(result,result.ok?200:result.conflict?409:502);
 }
 if(u.pathname==='/app.js')return new Response(APP,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'}});
 if(u.pathname==='/')return new Response(HTML,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
@@ -46,7 +52,7 @@ function summary(){
  $('#models').textContent=new Set(state.products.map(p=>p.model)).size;
  $('#variants').textContent=state.products.length;
  $('#counted').textContent=state.products.filter(p=>p.physical!==null).length;
- message(drafts.size?drafts.size+' variante(s) sin guardar. Pulsa Guardar en el cuadro del producto.':'Inventario conectado. Selecciona las existencias y pulsa Guardar en cada cuadro.');
+ message(drafts.size?drafts.size+' variante(s) sin guardar. Pulsa Guardar en el cuadro del producto.':(state.storage==='google-sheets'?'Conectado a Google Sheets · columna Existencia física. ':'Inventario conectado. ')+'Selecciona las existencias y pulsa Guardar en cada cuadro.');
 }
 async function load(){
  try{
