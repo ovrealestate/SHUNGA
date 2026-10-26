@@ -8,7 +8,7 @@ URL: https://shunga.ovrealestate.workers.dev
 
 Acceder con el usuario y la contraseña compartidos proporcionados al personal. Seleccionar una existencia de 0 a 20 deja un cambio pendiente. Cada cuadro de producto tiene un botón Guardar que guarda sus variantes modificadas. “Sin contar” elimina el conteo; cero significa sin unidades. La página confirma el guardado o muestra el error. Actualizar consulta los datos persistidos. La conexión comprueba el conteo anterior y su revisión bajo un bloqueo antes de escribir únicamente la columna G. Conserva las fórmulas y el resto de columnas.
 
-Las categorías y la búsqueda se mantienen. No hay botón de impresión. Se incorporaron 21 fotografías del catálogo PDF proporcionado y la fotografía adicional de SH44 confirmada por el usuario: los 22 modelos tienen fotografía. Las notas de fotos de referencia y empaques por verificar se conservan. Las imágenes e información se guardan en la tabla privada catalog_assets y se sirven únicamente tras autenticar al usuario.
+Las categorías y la búsqueda se mantienen. El botón Imprimir abre un PDF de faltantes. Se incorporaron 21 fotografías del catálogo PDF proporcionado y la fotografía adicional de SH44 confirmada por el usuario: los 22 modelos tienen fotografía. Las notas de fotos de referencia y empaques por verificar se conservan. Las imágenes e información se guardan en la tabla privada catalog_assets y se sirven únicamente tras autenticar al usuario.
 
 ## Configuración
 
@@ -29,3 +29,9 @@ El botón superior abre una advertencia que indica que afecta a todas las varian
 ## Diseño del catálogo
 
 La página replica la paleta del PDF (rosa #D34B76, rosa claro #FCECF1, blanco y gris), la tipografía sin serifas, las categorías numeradas y las fichas horizontales con franja lateral y tabla de variantes. En móvil las fotografías se colocan encima de los datos. Los conteos, Guardar y la advertencia de Poner todo en 0 conservan su funcionamiento.
+
+## Columnas comerciales e impresión
+
+En Inventario se añadieron M Costo, N Precio público y O Marca. Costo y precio público quedan vacíos para captura posterior; marca es 85 en las 43 variantes existentes. Las columnas G y H conservan su ubicación y fórmulas.
+
+Imprimir abre /faltantes.pdf y consulta Google Sheets en ese momento. Solo incluye valores numéricos positivos de la columna H, con Descripción, Color y Cantidad en una cuadrícula. No calcula el faltante de nuevo ni usa cambios locales pendientes. El PDF se genera con pdf-lib, repite encabezados al cambiar de página y no se almacena en caché. Actualizar vuelve a consultar la hoja y conserva los cambios locales pendientes para guardarlos mediante Guardar.
