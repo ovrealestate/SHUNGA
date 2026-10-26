@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env*
+data.json
+preview-*.png
+SHUNGA-vista-referencia.pdf
+deployment.json
+verify-ui.mjs
+backup-worker.js
