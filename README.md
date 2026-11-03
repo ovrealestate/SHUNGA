@@ -35,3 +35,9 @@ La página replica la paleta del PDF (rosa #D34B76, rosa claro #FCECF1, blanco y
 En Inventario se añadieron M Costo, N Precio público y O Marca. Costo y precio público quedan vacíos para captura posterior; marca es 85 en las 43 variantes existentes. Las columnas G y H conservan su ubicación y fórmulas.
 
 Imprimir abre /faltantes.pdf y consulta Google Sheets en ese momento. Solo incluye valores numéricos positivos de la columna H, con Descripción, Color y Cantidad en una cuadrícula. No calcula el faltante de nuevo ni usa cambios locales pendientes. El PDF se genera con pdf-lib, repite encabezados al cambiar de página y no se almacena en caché. Actualizar vuelve a consultar la hoja y conserva los cambios locales pendientes para guardarlos mediante Guardar.
+
+## Etiquetas XLS
+
+Etiquetas descarga /etiquetas.xls, un archivo Excel 97–2003 BIFF8 real generado con SheetJS CE 0.20.3 oficial. Requiere el mismo acceso privado y consulta la hoja de nuevo en cada descarga. Solo incluye faltantes positivos de H, en el orden de la hoja. Columnas A:I: Modelo, Color (3 caracteres), Talla (2 caracteres; UN si no hay), Código de barras (texto), Pedido (H), Precio (N Precio público), Marca (O; 85 si está vacía), columna vacía y Subtotal (M Costo × H). Subtotales y suma se calculan al descargar. Si falta un costo, el subtotal queda vacío y el total dice PENDIENTE COSTO para no presentar una suma incompleta. Sin faltantes el total es 0.
+
+La conexión privada lee las columnas comerciales y busca una columna con encabezado Talla, si existe. No cambia ningún dato de la hoja. El botón impide descargar mientras haya conteos sin guardar y muestra errores de conexión o importes inválidos.
