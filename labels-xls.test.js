@@ -9,7 +9,7 @@ test('labels use actual H, abbreviations, identifiers as text and the requested 
  const book=XLSX.read(bytes,{type:'array'}),sheet=book.Sheets.Etiquetas;
  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null});
  assert.deepEqual(rows[0],LABEL_HEADERS);
- assert.deepEqual(rows[1],['SH01','ROS','UN',product.id,3,28.9,85,null,12.35,37.05,(28.9-12.35)/28.9]);
+ assert.deepEqual(rows[1],['SH01','ROS','UN',product.id,3,28.9,85,null,12.35,37.05,(28.9-12.35)/12.35]);
  assert.equal(rows[2][2],'Me');assert.equal(rows[3][9],57.05);assert.equal(sheet.D2.t,'s');
 });
 test('missing costs stay blank and never produce an understated total',()=>{
@@ -24,9 +24,14 @@ test('invalid data fails explicitly and an empty order has a zero total',()=>{
  assert.equal(sheet.J2.v,0);
 });
 
-test('individual margin uses selling price; missing or zero prices stay blank',()=>{
+test('individual profit uses cost; missing inputs or zero cost stay blank',()=>{
  const variants=[{...product,cost:60,price:100},{...product,cost:0,price:100},{...product,cost:120,price:100},{...product,cost:10,price:0},{...product,cost:null,price:100},{...product,cost:10,price:null}];
- const rows=labelRows(variants);assert.deepEqual(rows.map(r=>r[10]),[0.4,1,-0.2,null,null,null]);
+ const rows=labelRows(variants);assert.deepEqual(rows.map(r=>r[10]),[2/3,null,-1/6,-1,null,null]);
  const sheet=XLSX.read(createLabelsXls(variants),{type:'array',cellNF:true}).Sheets.Etiquetas;
- assert.equal(sheet.I1.v,'Costos');assert.equal(sheet.J1.v,'Subtotal');assert.equal(sheet.K1.v,'Utilidad %');assert.equal(sheet.K2.v,0.4);assert.equal(sheet.K2.z,'0.00%');assert.equal(sheet.J2.v,180);assert.equal(sheet.K5,undefined);assert.equal(sheet.K8,undefined);
+ assert.equal(sheet.I1.v,'Costos');assert.equal(sheet.J1.v,'Subtotal');assert.equal(sheet.K1.v,'Utilidad %');assert.equal(sheet.K2.v,2/3);assert.equal(sheet.K2.z,'0.00%');assert.equal(sheet.J2.v,180);assert.equal(sheet.K3,undefined);assert.equal(sheet.K5.v,-1);assert.equal(sheet.K8,undefined);
+});
+
+test('user example exports 152.83 percent profit on cost',()=>{
+ const sheet=XLSX.read(createLabelsXls([{...product,cost:168.10,price:425}]),{type:'array',cellNF:true}).Sheets.Etiquetas;
+ assert.equal(sheet.K2.v,(425-168.10)/168.10);assert.equal(sheet.K2.z,'0.00%');assert.equal((sheet.K2.v*100).toFixed(2),'152.83');
 });

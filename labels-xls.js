@@ -16,7 +16,7 @@ export function labelRows(products){
   if(!qty)continue;
   for(const key of ['cost','price','brand'])if(!Object.hasOwn(p,key))throw Error('La conexión necesita actualizarse para leer costo, precio y marca.');
   const cost=amount(p.cost,'Costo'),price=amount(p.price,'Precio público');
-  rows.push([text(p.model),prefix(p.variant,3),prefix(p.size,2)||'UN',text(p.id),qty,price,p.brand??85,null,cost,cost===null?null:Math.round((cost*qty+Number.EPSILON)*100)/100,cost===null||price===null||price===0?null:(price-cost)/price]);
+  rows.push([text(p.model),prefix(p.variant,3),prefix(p.size,2)||'UN',text(p.id),qty,price,p.brand??85,null,cost,cost===null?null:Math.round((cost*qty+Number.EPSILON)*100)/100,cost===null||price===null||cost===0?null:(price-cost)/cost]);
  }
  return rows;
 }
