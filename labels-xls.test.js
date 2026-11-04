@@ -35,3 +35,9 @@ test('user example exports 152.83 percent profit on cost',()=>{
  const sheet=XLSX.read(createLabelsXls([{...product,cost:168.10,price:425}]),{type:'array',cellNF:true}).Sheets.Etiquetas;
  assert.equal(sheet.K2.v,(425-168.10)/168.10);assert.equal(sheet.K2.z,'0.00%');assert.equal((sheet.K2.v*100).toFixed(2),'152.83');
 });
+
+test('XLS centers every cell format while preserving currency and percent formats',()=>{
+ const bytes=createLabelsXls([product]);const cfb=XLSX.CFB.read(bytes,{type:'array'}),data=XLSX.CFB.find(cfb,'Workbook').content;let styles=0;
+ for(let pos=0;pos+4<=data.length;){const type=data[pos]|data[pos+1]<<8,len=data[pos+2]|data[pos+3]<<8;if(type===0xe0){assert.equal(data[pos+10]&7,2);styles++;}pos+=4+len;}
+ assert.ok(styles>0);const sheet=XLSX.read(bytes,{type:'array',cellNF:true}).Sheets.Etiquetas;assert.equal(sheet.I2.z,'"$"#,##0.00');assert.equal(sheet.K2.z,'0.00%');assert.equal(sheet.J3.v,37.05);
+});

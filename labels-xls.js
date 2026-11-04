@@ -3,6 +3,21 @@ import * as XLSX from 'xlsx';
 export const LABEL_HEADERS=['Modelo','Color','Talla','Código de barras','Pedido','Precio','Marca','','Costos','Subtotal','Utilidad %'];
 const text=v=>String(v??'').trim();
 const prefix=(v,n)=>Array.from(text(v)).slice(0,n).join('');
+// SheetJS CE's BIFF8 writer omits alignment. Set the horizontal alignment
+// in each generated XF record without changing cell values or number formats.
+function centerXls(bytes){
+ const container=XLSX.CFB.read(new Uint8Array(bytes),{type:'array'});
+ const workbook=XLSX.CFB.find(container,'Workbook');
+ if(!workbook)throw Error('No se pudo centrar el archivo de etiquetas.');
+ const data=workbook.content;
+ for(let offset=0;offset+4<=data.length;){
+  const type=data[offset]|data[offset+1]<<8,length=data[offset+2]|data[offset+3]<<8;
+  if(offset+4+length>data.length)throw Error('Formato XLS inválido.');
+  if(type===0x00e0&&length===20)data[offset+10]=(data[offset+10]&0xf8)|2;
+  offset+=4+length;
+ }
+ return new Uint8Array(XLSX.CFB.write(container,{type:'array'}));
+}
 function amount(v,label){
  if(v===null||v===undefined||v==='')return null;
  if(typeof v!=='number'||!Number.isFinite(v)||v<0)throw Error(label+' inválido en Google Sheets.');
@@ -32,5 +47,5 @@ export function createLabelsXls(products){
  }
  if(typeof total==='number')sheet['J'+(rows.length+2)].z='"$"#,##0.00';
  const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Etiquetas');
- return new Uint8Array(XLSX.write(book,{type:'array',bookType:'biff8'}));
+ return centerXls(XLSX.write(book,{type:'array',bookType:'biff8'}));
 }
