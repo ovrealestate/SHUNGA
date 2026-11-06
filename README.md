@@ -43,3 +43,9 @@ Etiquetas descarga /etiquetas.xls, un archivo Excel 97–2003 BIFF8 real generad
 La conexión privada lee las columnas comerciales y busca una columna con encabezado Talla, si existe. No cambia ningún dato de la hoja. El botón impide descargar mientras haya conteos sin guardar y muestra errores de conexión o importes inválidos.
 
 Los encabezados, valores y el total de Etiquetas están centrados horizontalmente en todas las columnas; se conservan los formatos monetarios y porcentuales.
+
+## Inicio y Diamante
+
+La ruta / muestra la selección SHUNGA o DIAMANTE. /shunga/ conserva el catálogo existente; /diamante/ incluye 29 modelos y 35 variantes (141 piezas ideales) extraídos del PDF del propietario. Diamante guarda sus conteos exclusivamente en G de la pestaña Diamante (sheetId 851106) del mismo archivo. Los conteos iniciales, costo, precio y talla están vacíos; la marca está PENDIENTE por indicación del propietario. Las 29 fotos se guardan en catalog_assets sin sustituir ninguna foto de SHUNGA. Las notas de fotografías de referencia se mantienen.
+
+Cada catálogo tiene sus rutas de API, fotografías, PDF y XLS; las rutas antiguas sin prefijo siguen refiriéndose a SHUNGA. El catálogo se determina por la URL y se incluye en la solicitud firmada; Apps Script selecciona únicamente las dos pestañas permitidas. Las revisiones y el respaldo del reinicio de Diamante tienen prefijo propio, para no compartir conteos ni conflictos con SHUNGA. El botón Poner todo en 0 afecta solo al catálogo abierto. Los cambios pendientes se conservan al actualizar, y cambiar de catálogo avisa si quedan cambios sin guardar.

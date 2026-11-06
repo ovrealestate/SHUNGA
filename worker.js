@@ -13,7 +13,7 @@ export async function authenticated(req,env){
 async function sheetCall(env,action,payload={}){
  const target=new URL(env.SHEETS_ENDPOINT);
  if(target.protocol!=='https:'||target.hostname!=='script.google.com'||!target.pathname.endsWith('/exec'))throw Error('Conexión de Sheets inválida.');
- const body=JSON.stringify({action,...payload,ts:Date.now(),nonce:crypto.randomUUID()});
+ const body=JSON.stringify({action,...payload,catalog:env.INVENTORY_CATALOG||'shunga',ts:Date.now(),nonce:crypto.randomUUID()});
  const key=await crypto.subtle.importKey('raw',enc.encode(env.AUTH_HASH),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode(body)))));
  const r=await fetch(target.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body,sig}),signal:AbortSignal.timeout(25000)});
@@ -23,24 +23,29 @@ async function sheetCall(env,action,payload={}){
 }
 export default {async fetch(req,env){let response;try{response=await route(req,env);}catch(e){response=json({error:e.message||'No se pudo completar la operación.'},502);}const h=new Headers(response.headers);h.set('X-Content-Type-Options','nosniff');h.set('Referrer-Policy','no-referrer');h.set('X-Frame-Options','DENY');h.set('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return new Response(response.body,{status:response.status,headers:h});}};
 export async function route(req,env){const u=new URL(req.url);
+const match=u.pathname.match(/^\/(shunga|diamante)(?=\/|$)/);
+const catalog=match?match[1]:'shunga',isDiamante=catalog==='diamante',brand=isDiamante?'DIAMANTE':'SHUNGA',base=match?'/'+catalog:'';
+if(match)u.pathname=u.pathname.slice(base.length)||'/';
+env={...env,INVENTORY_CATALOG:catalog};
 if(!await authenticated(req,env))return new Response('Acceso privado · Beach & Love',{status:401,headers:{'WWW-Authenticate':'Basic realm="Beach & Love SHUNGA", charset="UTF-8"','Cache-Control':'no-store'}});
+if(!match&&u.pathname==='/'&&req.method==='GET')return new Response(HOME,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
 if(u.pathname==='/etiquetas.xls'&&req.method==='GET'){
  if(!env.SHEETS_ENDPOINT)return json({error:'La conexión con Google Sheets no está disponible.'},503);
  const result=await sheetCall(env,'read');if(!result.ok)throw Error(result.error);
  let bytes;try{bytes=createLabelsXls(result.products);}catch(e){return json({error:e.message},422);}
- return new Response(bytes,{headers:{'Content-Type':'application/vnd.ms-excel','Content-Disposition':'attachment; filename="SHUNGA-Etiquetas.xls"','Cache-Control':'no-store'}});
+ return new Response(bytes,{headers:{'Content-Type':'application/vnd.ms-excel','Content-Disposition':'attachment; filename="'+brand+'-Etiquetas.xls"','Cache-Control':'no-store'}});
 }
 if(u.pathname==='/faltantes.pdf'&&req.method==='GET'){
  if(!env.SHEETS_ENDPOINT)return json({error:'La conexión con Google Sheets no está disponible.'},503);
  const result=await sheetCall(env,'read');if(!result.ok)throw Error(result.error);
  if(result.products.some(p=>!Object.prototype.hasOwnProperty.call(p,'shortfall')))return json({error:'La conexión necesita actualizarse para leer la columna H.'},503);
  if(result.products.some(p=>p.shortfall!==null&&(typeof p.shortfall!=='number'||!Number.isFinite(p.shortfall)||p.shortfall<0)))return json({error:'Hay valores inválidos en la columna H. Corrige la hoja antes de imprimir.'},422);
- const bytes=await createShortfallsPdf(result.products);
- return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':'inline; filename="SHUNGA-Faltantes.pdf"','Cache-Control':'no-store'}});
+ const bytes=await createShortfallsPdf(result.products,new Date(),brand);
+ return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':'inline; filename="'+brand+'-Faltantes.pdf"','Cache-Control':'no-store'}});
 }
 if(u.pathname.startsWith('/photos/')&&req.method==='GET'){
  const model=u.pathname.slice('/photos/'.length);
- if(!/^SH[0-9]+$/.test(model)||!env.CATALOG)return json({error:'Fotografía no encontrada.'},404);
+ if(!(isDiamante?/^D[0-9]+$/:/^SH[0-9]+$/).test(model)||!env.CATALOG)return json({error:'Fotografía no encontrada.'},404);
  const asset=await env.CATALOG.prepare('SELECT image_base64,mime FROM catalog_assets WHERE model=?').bind(model).first();
  if(!asset?.image_base64)return json({error:'Fotografía no disponible.'},404);
  return new Response(Uint8Array.from(atob(asset.image_base64),c=>c.charCodeAt(0)),{headers:{'Content-Type':asset.mime,'Cache-Control':'private, max-age=86400'}});
@@ -61,8 +66,8 @@ if(u.pathname==='/api/inventory'&&req.method==='GET'){
  const result=await sheetCall(env,'read');if(!result.ok)throw Error(result.error);
  let catalog=new Map();
  if(env.CATALOG){const data=await env.CATALOG.prepare("SELECT model,info_json,(image_base64 IS NOT NULL AND image_base64!='') AS has_photo FROM catalog_assets").all();catalog=new Map(data.results.map(r=>[r.model,{...JSON.parse(r.info_json),hasPhoto:!!r.has_photo}]));}
- const products=result.products.map(p=>{const c=catalog.get(p.model);return c?{...p,photo:c.hasPhoto?'/photos/'+p.model+(c.photoVersion?'?v='+encodeURIComponent(c.photoVersion):''):p.photo,note:c.photoConfirmed?'':p.note,catalogNote:c.note,catalogPage:c.page}:p;});
- return json({products,live:true,storage:'google-sheets',categories:CATEGORIES});
+ const products=result.products.map(p=>{const c=catalog.get(p.model);return c?{...p,photo:c.hasPhoto?base+'/photos/'+p.model+(c.photoVersion?'?v='+encodeURIComponent(c.photoVersion):''):p.photo,note:c.photoConfirmed?'':p.note,catalogNote:c.note,catalogPage:c.page}:p;});
+ return json({products,live:true,storage:'google-sheets',categories:isDiamante?CATEGORIES.filter(c=>!['Feromonas','Aceites'].includes(c)):CATEGORIES});
 }
 if(u.pathname==='/api/inventory'&&req.method==='POST'){
  if(req.headers.get('Origin')!==u.origin||req.headers.get('Content-Type')!=='application/json')return json({error:'Origen inválido.'},403);
@@ -72,8 +77,8 @@ if(u.pathname==='/api/inventory'&&req.method==='POST'){
  if(typeof body.id!=='string'||!valid(body.value)||!valid(body.previous)||!Number.isInteger(body.revision)||body.revision<0)return json({error:'Selecciona una existencia entre 0 y 20.'},400);
  const result=await sheetCall(env,'write',{id:body.id,value:body.value,previous:body.previous,revision:body.revision});return json(result,result.ok?200:result.conflict?409:502);
 }
-if(u.pathname==='/app.js')return new Response(APP,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'}});
-if(u.pathname==='/')return new Response(HTML,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
+if(u.pathname==='/app.js')return new Response(catalogApp(base,brand),{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'}});
+if(u.pathname==='/')return new Response(catalogHtml(base,brand),{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
 return json({error:'Página no encontrada.'},404);
 }
 const HTML=`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUNGA · Beach & Love</title><style>
@@ -203,3 +208,17 @@ $('#confirm-reset').onclick=async()=>{
 window.addEventListener('beforeunload',e=>{if(pending||drafts.size){e.preventDefault();e.returnValue='';}});
 load();
 `;
+
+function catalogApp(base,brand){
+ return APP.replaceAll("'/api/","'"+base+"/api/").replaceAll("'/etiquetas.xls'","'"+base+"/etiquetas.xls'").replaceAll('SHUNGA-Etiquetas.xls',brand+'-Etiquetas.xls');
+}
+function catalogHtml(base,brand){
+ let page=HTML.replaceAll('SHUNGA',brand).replace('Fotografía de SH44 confirmada por Beach & Love.','').replace('Diseño y fotografías del catálogo proporcionado.','Fotografías del catálogo proporcionado.');
+ page=page.replace('<header><div class="brand">','<header><div><a class="home-link" href="/">← Catálogos</a><div class="brand">').replace('BEACH & LOVE</div><div class="tiny">','BEACH & LOVE</div></div><div class="tiny">');
+ page=page.replace('</style>','.home-link{display:inline-block;color:var(--pink-dark);font-size:13px;text-decoration:none;margin-bottom:12px}'+(brand==='DIAMANTE'?':root{--pink:#293f4b;--pink-dark:#162c38;--pink-light:#edf2f5}':'')+'</style>');
+ for(const path of ['/app.js','/faltantes.pdf','/etiquetas.xls'])page=page.replaceAll('"'+path+'"','"'+base+path+'"');
+ return page;
+}
+const HOME=`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Inventarios · Beach & Love</title><style>
+*{box-sizing:border-box}body{margin:0;background:#faf8f9;color:#211f20;font:16px Arial,sans-serif}main{max-width:1100px;margin:auto;padding:60px 28px}.eyebrow{font-weight:800;letter-spacing:.12em;color:#b52f5b;font-size:13px}h1{font-size:clamp(34px,6vw,58px);line-height:1.06;margin:26px 0 16px}p{color:#6f6a70;line-height:1.7}.catalogs{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:40px}.catalog{display:flex;flex-direction:column;color:inherit;text-decoration:none;background:white;border:1px solid #e6e2e4;border-radius:18px;padding:28px;border-top:6px solid var(--accent)}.catalog:hover{box-shadow:0 10px 30px #26152012}.catalog:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.catalog img{height:210px;width:100%;object-fit:contain;margin-bottom:24px}.catalog h2{font-size:32px;margin:0 0 8px}.catalog p{margin:0 0 24px}.enter{display:block;text-align:center;background:var(--accent);color:white;padding:15px;border-radius:7px;font-weight:bold;margin-top:auto}.foot{font-size:12px;margin-top:30px}@media(max-width:600px){main{padding:32px 18px}.catalogs{grid-template-columns:1fr;gap:20px}.catalog{padding:24px}.catalog img{height:170px}}
+</style><main><div class="eyebrow">BEACH & LOVE</div><h1>Inventarios de la tienda</h1><p>Selecciona el catálogo que quieres contar o consultar.</p><div class="catalogs"><a class="catalog" style="--accent:#d34b76" href="/shunga/"><img src="/shunga/photos/SH140" alt="Producto del catálogo SHUNGA"><h2>SHUNGA</h2><p>Conteo por producto, faltantes y etiquetas.</p><span class="enter">Entrar a SHUNGA →</span></a><a class="catalog" style="--accent:#293f4b" href="/diamante/"><img src="/diamante/photos/D006" alt="Producto del catálogo DIAMANTE"><h2>DIAMANTE</h2><p>Conteo por producto, faltantes y etiquetas.</p><span class="enter">Entrar a DIAMANTE →</span></a></div><p class="foot">Acceso privado · Los conteos se guardan en Google Sheets.</p></main></html>`;

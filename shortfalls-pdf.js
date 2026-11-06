@@ -27,7 +27,7 @@ function wrap(value, font, size, width) {
   return lines.length ? lines : [''];
 }
 
-export async function createShortfallsPdf(products, date = new Date()) {
+export async function createShortfallsPdf(products, date = new Date(), brand = 'SHUNGA') {
   const rows = shortfallRows(products);
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -47,7 +47,7 @@ export async function createShortfallsPdf(products, date = new Date()) {
   function newPage() {
     page = pdf.addPage([595.28, 841.89]);
     page.drawRectangle({x:margin, y:797, width:totalWidth, height:4, color:pink});
-    text('BEACH & LOVE / SHUNGA', margin, 777, bold, 11, pink);
+    text('BEACH & LOVE / '+brand, margin, 777, bold, 11, pink);
     text('FALTANTES DE INVENTARIO', margin, 750, bold, 20);
     text('Fuente: Google Sheets - columna H (Faltante)', margin, 729, regular, 9, muted);
     text(stamp + '  |  ' + rows.length + ' variantes  |  ' + total + ' piezas faltantes', margin, 713, regular, 9, muted);
@@ -73,9 +73,9 @@ export async function createShortfallsPdf(products, date = new Date()) {
   if(!rows.length){cellBox(margin,y,totalWidth,48);text('No hay faltantes mayores que 0 en la columna H.',margin+12,y-28,regular,11);}
   const pages=pdf.getPages();
   for(const [i,p] of pages.entries()){
-    page=p;text('BEACH & LOVE / SHUNGA',margin,35,bold,8,muted);
+    page=p;text('BEACH & LOVE / '+brand,margin,35,bold,8,muted);
     const footer='Página '+(i+1)+' de '+pages.length;text(footer,595.28-margin-regular.widthOfTextAtSize(footer,8),35,regular,8,muted);
   }
-  pdf.setTitle('Beach & Love - SHUNGA - Faltantes');pdf.setAuthor('Beach & Love');pdf.setSubject('Descripción, color y cantidad de faltantes de Google Sheets, columna H');
+  pdf.setTitle('Beach & Love - '+brand+' - Faltantes');pdf.setAuthor('Beach & Love');pdf.setSubject('Descripción, color y cantidad de faltantes de Google Sheets, columna H');
   return pdf.save();
 }
